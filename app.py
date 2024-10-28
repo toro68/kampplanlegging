@@ -34,6 +34,10 @@ db = DatabaseHandler()
 if 'kamper' not in st.session_state:
     st.session_state.kamper = {}  # Dictionary med kampnavn som nøkkel
 
+# I initialiseringen av session state (på toppen av filen)
+if 'spillere' not in st.session_state:
+    st.session_state.spillere = []  # eller en standardliste med spillere
+
 # Legg til ny funksjon for å lagre kamp
 def lagre_kampoppsett(navn, motstander):
     kamp_data = {
@@ -42,7 +46,8 @@ def lagre_kampoppsett(navn, motstander):
         'kamptid': st.session_state.kamptid,
         'perioder': st.session_state.perioder,
         'spilletid_df': st.session_state.spilletid_df.to_dict(),
-        'spillere': st.session_state.spillere
+        # Hent spillere fra spilletid_df istedenfor
+        'spillere': st.session_state.spilletid_df.index.tolist()
     }
     
     st.session_state.kamper[navn] = kamp_data
@@ -768,3 +773,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
