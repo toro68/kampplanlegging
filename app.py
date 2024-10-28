@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 import os
 from database import DatabaseHandler
+import json
 
 # Oppsett av logging
 def setup_logging():
@@ -28,6 +29,39 @@ logger = setup_logging()
 
 # Legg til etter eksisterende imports
 db = DatabaseHandler()
+
+# Legg til i SessionState initialiseringen
+if 'kamper' not in st.session_state:
+    st.session_state.kamper = {}  # Dictionary med kampnavn som nøkkel
+
+# Legg til ny funksjon for å lagre kamp
+def lagre_kampoppsett(navn, motstander):
+    kamp_data = {
+        'motstander': motstander,
+        'dato': datetime.now().strftime("%Y-%m-%d"),
+        'kamptid': st.session_state.kamptid,
+        'perioder': st.session_state.perioder,
+        'spilletid_df': st.session_state.spilletid_df.to_dict(),
+        'spillere': st.session_state.spillere
+    }
+    
+    st.session_state.kamper[navn] = kamp_data
+    
+    # Lagre til fil
+    with open('kamper.json', 'w', encoding='utf-8') as f:
+        json.dump(st.session_state.kamper, f, ensure_ascii=False, indent=2)
+
+# Legg til funksjon for å laste kamp
+def last_kampoppsett(navn):
+    if navn in st.session_state.kamper:
+        kamp = st.session_state.kamper[navn]
+        st.session_state.kamptid = kamp['kamptid']
+        st.session_state.perioder = kamp['perioder']
+        st.session_state.spillere = kamp['spillere']
+        # Konverter tilbake til DataFrame
+        st.session_state.spilletid_df = pd.DataFrame.from_dict(kamp['spilletid_df'])
+        return True
+    return False
 
 def initialize_session_state():
     if 'spilletid_df' not in st.session_state:
@@ -537,6 +571,30 @@ def main():
                 )
                 if aktiv_pos:
                     st.session_state.spilletid_df.at[spiller_for_posisjon, 'Aktiv posisjon'] = aktiv_pos
+
+        st.subheader("Lagre/Hent Kampoppsett")
+        
+        # Lagre kampoppsett
+        kamp_navn = st.text_input("Navn på kamp")
+        motstander = st.text_input("Motstander")
+        if st.button("Lagre kampoppsett"):
+            if kamp_navn and motstander:
+                lagre_kampoppsett(kamp_navn, motstander)
+                st.success(f"Kampoppsett lagret: {kamp_navn} mot {motstander}")
+            else:
+                st.error("Fyll inn både navn og motstander")
+        
+        # Hent kampoppsett
+        if st.session_state.kamper:
+            valgt_kamp = st.selectbox(
+                "Velg tidligere kampoppsett",
+                options=list(st.session_state.kamper.keys())
+            )
+            if st.button("Last kampoppsett"):
+                if last_kampoppsett(valgt_kamp):
+                    st.success(f"Lastet kampoppsett: {valgt_kamp}")
+                else:
+                    st.error("Kunne ikke laste kampoppsettet")
 
     # Oppdater mål spilletid før visning
     st.session_state.spilletid_df = oppdater_mal_spilletid()
