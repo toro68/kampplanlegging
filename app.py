@@ -630,16 +630,20 @@ def main():
     
     # Vis status for hver periode
     st.subheader("Periodestatus")
-    status_cols = st.columns(len(st.session_state.perioder))
-    
-    for i, periode in enumerate(st.session_state.perioder):
-        with status_cols[i]:
-            spillere_pa_banen, _ = telle_spillere_pa_banen(edited_df, periode)
-            st.metric(
-                periode,
-                spillere_pa_banen,
-                spillere_pa_banen - st.session_state.antall_paa_banen
-            )
+    # Sjekk at det finnes perioder før vi lager kolonner
+    if st.session_state.perioder and len(st.session_state.perioder) > 0:
+        status_cols = st.columns(len(st.session_state.perioder))
+        
+        for i, periode in enumerate(st.session_state.perioder):
+            with status_cols[i]:
+                spillere_pa_banen, _ = telle_spillere_pa_banen(edited_df, periode)
+                st.metric(
+                    periode,
+                    spillere_pa_banen,
+                    spillere_pa_banen - st.session_state.antall_paa_banen
+                )
+    else:
+        st.warning("Ingen perioder er definert ennå")
     
     st.session_state.spilletid_df.update(edited_df)
     
