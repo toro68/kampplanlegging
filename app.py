@@ -40,35 +40,75 @@ if 'spillere' not in st.session_state:
 
 # Legg til ny funksjon for å lagre kamp
 def lagre_kampoppsett(navn, motstander):
-    kamp_data = {
-        'motstander': motstander,
-        'dato': datetime.now().strftime("%Y-%m-%d"),
-        'kamptid': st.session_state.kamptid,
-        'perioder': st.session_state.perioder,
-        'spilletid_df': st.session_state.spilletid_df.to_dict(),
-        # Hent spillere fra spilletid_df istedenfor
-        'spillere': st.session_state.spilletid_df.index.tolist()
-    }
-    
-    st.session_state.kamper[navn] = kamp_data
-    
-    # Lagre til fil
-    with open('kamper.json', 'w', encoding='utf-8') as f:
-        json.dump(st.session_state.kamper, f, ensure_ascii=False, indent=2)
+    """Lagrer gjeldende kampoppsett"""
+    try:
+        # Konverter DataFrame til dict på en sikker måte
+        spilletid_dict = {
+            'data': st.session_state.spilletid_df.to_dict('split'),
+            'index': st.session_state.spilletid_df.index.tolist(),
+            'columns': st.session_state.spilletid_df.columns.tolist()
+        }
+        
+        kamp_data = {
+            'motstander': motstander,
+            'dato': datetime.now().strftime("%Y-%m-%d"),
+            'kamptid': st.session_state.kamptid,
+            'perioder': st.session_state.perioder,
+            'spilletid_df': spilletid_dict,
+            'antall_paa_banen': st.session_state.antall_paa_banen
+        }
+        
+        st.session_state.kamper[navn] = kamp_data
+        
+        # Lagre til fil
+        with open('kamper.json', 'w', encoding='utf-8') as f:
+            json.dump(st.session_state.kamper, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"Kampoppsett lagret: {navn}")
+        return True
+    except Exception as e:
+        logger.error(f"Feil ved lagring av kampoppsett: {str(e)}")
+        return False
 
 # Legg til funksjon for å laste kamp
 def last_kampoppsett(navn):
-    if navn in st.session_state.kamper:
-        kamp = st.session_state.kamper[navn]
-        st.session_state.kamptid = kamp['kamptid']
-        st.session_state.perioder = kamp['perioder']
-        st.session_state.spillere = kamp['spillere']
-        # Konverter tilbake til DataFrame
-        st.session_state.spilletid_df = pd.DataFrame.from_dict(kamp['spilletid_df'])
-        return True
+    """Laster et tidligere kampoppsett"""
+    try:
+        if navn in st.session_state.kamper:
+            kamp = st.session_state.kamper[navn]
+            
+            # Oppdater session state
+            st.session_state.kamptid = kamp['kamptid']
+            st.session_state.perioder = kamp['perioder']
+            st.session_state.antall_paa_banen = kamp.get('antall_paa_banen', 9)  # Default til 9 hvis ikke funnet
+            
+            # Gjenopprett DataFrame
+            spilletid_dict = kamp['spilletid_df']
+            df = pd.DataFrame(**spilletid_dict['data'])
+            df.index = spilletid_dict['index']
+            df.columns = spilletid_dict['columns']
+            
+            # Oppdater spilletid_df
+            st.session_state.spilletid_df = df
+            
+            # Oppdater kamp_info
+            st.session_state.kamp_info['motstander'] = kamp['motstander']
+            st.session_state.kamp_info['dato'] = kamp['dato']
+            
+            logger.info(f"Kampoppsett lastet: {navn}")
+            return True
+    except Exception as e:
+        logger.error(f"Feil ved lasting av kampoppsett: {str(e)}")
     return False
 
+# Forenklet initialisering av session state
 def initialize_session_state():
+    if 'kamp_info' not in st.session_state:
+        st.session_state.kamp_info = {
+            'motstander': '',
+            'dato': datetime.now().strftime("%Y-%m-%d")
+        }
+    
     if 'spilletid_df' not in st.session_state:
         logger.info("Initialiserer ny session state")
         # Standard spillerliste som utgangspunkt
@@ -90,36 +130,30 @@ def initialize_session_state():
         
         # Opprett DataFrame
         df = pd.DataFrame(index=spillere.keys())
-        df['Posisjoner'] = pd.Series({navn: [pos] for navn, pos in spillere.items()})  # Endret til liste av posisjoner
-        df['Aktiv posisjon'] = pd.Series(spillere)  # Nåværende valgt posisjon
+        df['Posisjoner'] = pd.Series({navn: [pos] for navn, pos in spillere.items()})
+        df['Aktiv posisjon'] = pd.Series(spillere)
         df['Tilgjengelig'] = True
         df['Total spilletid'] = 0
         df['Differanse'] = 0
-        df['Mål spilletid'] = 0  # Legg til denne linjen
+        df['Mål spilletid'] = 0
         
         # Legg til periodekolonner
-        perioder = generer_perioder(st.session_state.kamptid if 'kamptid' in st.session_state else 80)
+        perioder = generer_perioder(st.session_state.get('kamptid', 80))
         for periode in perioder:
             df[periode] = False
         
-        # Legg til periodeposisjoner
-        for periode in perioder:
-            df[f'posisjon_{periode}'] = df['Aktiv posisjon']  # Standardposisjon for hver periode
-        
         st.session_state.spilletid_df = df
         logger.info(f"Opprettet ny spilletid_df med {len(spillere)} spillere")
-        
+    
     if 'antall_paa_banen' not in st.session_state:
-        st.session_state.antall_paa_banen = 9  # Standard verdi er 9
+        st.session_state.antall_paa_banen = 9
         
     if 'kamptid' not in st.session_state:
         st.session_state.kamptid = 80
         
-    # Legg til initialisering av perioder
     if 'perioder' not in st.session_state:
         st.session_state.perioder = generer_perioder(st.session_state.kamptid)
     
-    # Last data fra database
     db.last_alt()
 
 def generer_perioder(total_tid):
@@ -469,11 +503,25 @@ def main():
     
     initialize_session_state()
     
-    # Sidebar for innstillinger
+    # Sidebar for kampinfo og innstillinger
     with st.sidebar:
+        st.header("Kampinformasjon")
+        
+        # Enkel kampinfo
+        st.session_state.kamp_info['motstander'] = st.text_input(
+            "Motstander",
+            value=st.session_state.kamp_info['motstander']
+        )
+        st.session_state.kamp_info['dato'] = st.date_input(
+            "Kampdato",
+            value=datetime.strptime(st.session_state.kamp_info['dato'], "%Y-%m-%d")
+        ).strftime("%Y-%m-%d")
+        
+        st.markdown("---")
+        
+        # Kampinnstillinger
         st.header("Kampinnstillinger")
         
-        # Kamptid
         ny_kamptid = st.number_input(
             "Total kamptid (minutter)",
             min_value=40,
@@ -483,132 +531,23 @@ def main():
         )
         
         if ny_kamptid != st.session_state.kamptid:
-            logger.info(f"Endrer kamptid fra {st.session_state.kamptid} til {ny_kamptid} minutter")
             st.session_state.kamptid = ny_kamptid
             oppdater_perioder()
         
-        # Antall spillere på banen
         ny_antall_paa_banen = st.number_input(
             "Antall spillere på banen",
             value=st.session_state.antall_paa_banen,
             min_value=7,
-            max_value=11,
-            help="Velg antall spillere som skal være på banen samtidig"
+            max_value=11
         )
         
         if ny_antall_paa_banen != st.session_state.antall_paa_banen:
             st.session_state.antall_paa_banen = ny_antall_paa_banen
             oppdater_mal_spilletid()
         
-        # Beregn total tilgjengelig spilletid
+        # Vis total tilgjengelig spilletid
         total_tilgjengelig_tid = st.session_state.kamptid * st.session_state.antall_paa_banen
         st.info(f"Total tilgjengelig spilletid: {total_tilgjengelig_tid} minutter")
-        
-        # Administrer spillere
-        st.header("Administrer spillere")
-        
-        # Legg til ny spiller
-        with st.expander("Legg til ny spiller"):
-            ny_spiller = st.text_input("Navn")
-            ny_posisjon = st.text_input("Posisjon")
-            if st.button("Legg til spiller") and ny_spiller and ny_posisjon:
-                logger.info(f"Forsøker å legge til ny spiller: {ny_spiller} ({ny_posisjon})")
-                if ny_spiller not in st.session_state.spilletid_df.index:
-                    # Opprett grunnleggende spillerdata
-                    new_row = pd.DataFrame({
-                        'Posisjoner': [[ny_posisjon]],  # Merk: Liste i liste
-                        'Aktiv posisjon': ny_posisjon,  
-                        'Tilgjengelig': True,
-                        'Total spilletid': 0,
-                        'Differanse': 0,
-                        'Mål spilletid': 0
-                    }, index=[ny_spiller])
-                    
-                    # Legg til periodekolonner med False som standardverdi
-                    for periode in st.session_state.perioder:
-                        new_row[periode] = False
-                    
-                    # Oppdater DataFrame
-                    st.session_state.spilletid_df = pd.concat([st.session_state.spilletid_df, new_row])
-                    st.success(f"La til {ny_spiller}")
-                    oppdater_mal_spilletid()
-                else:
-                    st.error("Spiller finnes allerede")
-        
-        # Fjern spiller
-        with st.expander("Fjern spiller"):
-            spiller_å_fjerne = st.selectbox(
-                "Velg spiller å fjerne",
-                options=st.session_state.spilletid_df.index.tolist()
-            )
-            if st.button("Fjern spiller"):
-                st.session_state.spilletid_df = st.session_state.spilletid_df.drop(spiller_å_fjerne)
-                st.success(f"Fjernet {spiller_å_fjerne}")
-                oppdater_mal_spilletid()
-        
-        # Kamptropp
-        st.header("Kamptropp")
-        
-        # Legg til håndtering av posisjoner
-        with st.expander("Administrer posisjoner"):
-            spiller_for_posisjon = st.selectbox(
-                "Velg spiller",
-                options=st.session_state.spilletid_df.index.tolist()
-            )
-            
-            if spiller_for_posisjon:
-                # Vis nåværende posisjoner
-                current_pos = st.session_state.spilletid_df.at[spiller_for_posisjon, 'Posisjoner']
-                st.write("Nåværende posisjoner:", ", ".join(current_pos))
-                
-                # Legg til ny posisjon
-                ny_posisjon = st.text_input("Legg til ny posisjon")
-                if st.button("Legg til posisjon") and ny_posisjon:
-                    if ny_posisjon not in current_pos:
-                        current_pos.append(ny_posisjon)
-                        st.success(f"La til posisjon: {ny_posisjon}")
-                
-                # Velg aktiv posisjon
-                aktiv_pos = st.selectbox(
-                    "Velg aktiv posisjon",
-                    options=current_pos,
-                    index=current_pos.index(st.session_state.spilletid_df.at[spiller_for_posisjon, 'Aktiv posisjon'])
-                )
-                if aktiv_pos:
-                    st.session_state.spilletid_df.at[spiller_for_posisjon, 'Aktiv posisjon'] = aktiv_pos
-
-        st.subheader("Lagre/Hent Kampoppsett")
-        
-        # Debug info
-        st.write("Tilgjengelige kamper:", list(st.session_state.kamper.keys()))
-        
-        # Lagre kampoppsett
-        kamp_navn = st.text_input("Navn på kamp")
-        motstander = st.text_input("Motstander")
-        if st.button("Lagre kampoppsett"):
-            if kamp_navn and motstander:
-                lagre_kampoppsett(kamp_navn, motstander)
-                st.success(f"Kampoppsett lagret: {kamp_navn} mot {motstander}")
-            else:
-                st.error("Fyll inn både navn og motstander")
-        
-        # Hent kampoppsett
-        st.markdown("---")
-        st.subheader("Last tidligere kampoppsett")
-        
-        if st.session_state.kamper:
-            valgt_kamp = st.selectbox(
-                "Velg kamp",
-                options=list(st.session_state.kamper.keys()),
-                key="kamp_velger"
-            )
-            if st.button("Last valgt kampoppsett"):
-                if last_kampoppsett(valgt_kamp):
-                    st.success(f"Lastet kampoppsett: {valgt_kamp}")
-                else:
-                    st.error("Kunne ikke laste kampoppsettet")
-        else:
-            st.info("Ingen lagrede kampoppsett tilgjengelig")
 
     # Oppdater mål spilletid før visning
     st.session_state.spilletid_df = oppdater_mal_spilletid()
@@ -775,11 +714,39 @@ def main():
         mime="text/csv"
     )
 
-    # Legg til lagring etter hver endring av data
-    if edited_df is not None:  # Sjekk at vi har data å lagre
+    # I sidebar, oppdater lagre/laste-seksjonen:
+    with st.sidebar:
+        with st.expander("Lagre/Last kampoppsett"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                kamp_navn = st.text_input("Navn på kamp")
+                if st.button("Lagre kampoppsett") and kamp_navn:
+                    if lagre_kampoppsett(kamp_navn, st.session_state.kamp_info['motstander']):
+                        st.success(f"Kampoppsett lagret: {kamp_navn}")
+                    else:
+                        st.error("Kunne ikke lagre kampoppsettet")
+            
+            with col2:
+                if st.session_state.kamper:
+                    valgt_kamp = st.selectbox(
+                        "Velg tidligere kampoppsett",
+                        options=list(st.session_state.kamper.keys())
+                    )
+                    if st.button("Last kampoppsett"):
+                        if last_kampoppsett(valgt_kamp):
+                            st.rerun()  # Oppdater siden for å vise endringene
+                        else:
+                            st.error("Kunne ikke laste kampoppsettet")
+
+    # I hovedområdet, etter at endringer er gjort:
+    if edited_df is not None:
         st.session_state.spilletid_df.update(edited_df)
-        db.lagre_alt()
+        db.lagre_alt()  # Lagre til database
+        
+        # Hvis det finnes et aktivt kampnavn, oppdater også kampoppsettet
+        if 'aktivt_kamp_navn' in st.session_state and st.session_state.aktivt_kamp_navn:
+            lagre_kampoppsett(st.session_state.aktivt_kamp_navn, st.session_state.kamp_info['motstander'])
 
 if __name__ == "__main__":
     main()
-
