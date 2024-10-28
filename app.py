@@ -579,6 +579,9 @@ def main():
 
         st.subheader("Lagre/Hent Kampoppsett")
         
+        # Debug info
+        st.write("Tilgjengelige kamper:", list(st.session_state.kamper.keys()))
+        
         # Lagre kampoppsett
         kamp_navn = st.text_input("Navn på kamp")
         motstander = st.text_input("Motstander")
@@ -590,16 +593,22 @@ def main():
                 st.error("Fyll inn både navn og motstander")
         
         # Hent kampoppsett
+        st.markdown("---")
+        st.subheader("Last tidligere kampoppsett")
+        
         if st.session_state.kamper:
             valgt_kamp = st.selectbox(
-                "Velg tidligere kampoppsett",
-                options=list(st.session_state.kamper.keys())
+                "Velg kamp",
+                options=list(st.session_state.kamper.keys()),
+                key="kamp_velger"
             )
-            if st.button("Last kampoppsett"):
+            if st.button("Last valgt kampoppsett"):
                 if last_kampoppsett(valgt_kamp):
                     st.success(f"Lastet kampoppsett: {valgt_kamp}")
                 else:
                     st.error("Kunne ikke laste kampoppsettet")
+        else:
+            st.info("Ingen lagrede kampoppsett tilgjengelig")
 
     # Oppdater mål spilletid før visning
     st.session_state.spilletid_df = oppdater_mal_spilletid()
